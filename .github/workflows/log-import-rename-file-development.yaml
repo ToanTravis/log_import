@@ -1,0 +1,48 @@
+name: 【Development】Rename files to not-imported log (Remove `__` prefix)
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Log platform
+        required: true
+      type:
+        description: Log type
+        required: true
+      date:
+        description: Input date [YYYY-MM-DD].
+        required: true
+
+env:
+  BUCKET_NAME: audienceone-development
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  execute:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1-node16
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ROOT_ACCOUNT_ID }}:role/logimport-github-action-role
+          role-session-name: log-import-rename-file-development
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Rename files to not-imported logs
+        env:
+          bucket_name: ${{ env.BUCKET_NAME }}
+          platform: ${{ github.event.inputs.platform }}
+          type: ${{ github.event.inputs.type }}
+          date: ${{ github.event.inputs.date }}
+        run: |
+          flist=(`aws s3 ls s3://${bucket_name}/data/${platform}/${type}/${date}/__ | awk '{print $4}'`)
+          for fname in "${flist[@]}"
+          do
+            new_fname=${fname#__}
+            echo "Rename file ${fname} → ${new_fname}"
+            aws s3 mv s3://${bucket_name}/data/${platform}/${type}/${date}/${fname} s3://${bucket_name}/data/${platform}/${type}/${date}/${new_fname} 
+          done

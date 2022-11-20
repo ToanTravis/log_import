@@ -1,0 +1,83 @@
+production:
+  s3_bucket: "audienceone"
+  schema_path_prefix: "data/{log_platform}/metadata/v{version}/{log_type}"
+  ecs_task_name: "a1-log-import"
+  td_timeout: 7200
+  log_files_limit: 200
+  log_router_memory_size: 256
+  machine_size:
+    yone:
+      app_incoming_request:
+        cpu: "1024"
+        memory: "8192"
+      app_outgoing_request:
+        cpu: "1024"
+        memory: "8192"
+      dsp_imp:
+        cpu: "4096"
+        memory: "8192"
+      network_imp:
+        cpu: "1024"
+        memory: "8192"
+    foneh:
+      ad_slot_view:
+        cpu: "4096"
+        memory: "8192"
+      click:
+        cpu: "1024"
+        memory: "8192"
+      imp_decision:
+        cpu: "4096"
+        memory: "8192"
+      imp:
+        cpu: "4096"
+        memory: "8192"
+      vast_event:
+        cpu: "1024"
+        memory: "8192"
+    bidcore:
+      bid_request_app:
+        cpu: "4096"
+        memory: "8192"
+development:
+  s3_bucket: "audienceone-development"
+  schema_path_prefix: "data/{log_platform}/metadata/v{version}/{log_type}"
+  ecs_task_name: "development-a1-log-import"
+  td_timeout: 7200
+  log_files_limit: 200
+  log_router_memory_size: 256
+  machine_size:
+    aone_odessa_dev:
+      import_test:
+        cpu: "1024"
+        memory: "8192"
+      yone_app_incoming_request:
+        cpu: "1024"
+        memory: "8192"
+      yone_app_outgoing_request:
+        cpu: "1024"
+        memory: "8192"
+      yone_dsp_imp:
+        cpu: "4096"
+        memory: "8192"
+      yone_network_imp:
+        cpu: "1024"
+        memory: "8192"
+      foneh_ad_slot_view:
+        cpu: "4096"
+        memory: "8192"
+      foneh_click:
+        cpu: "1024"
+        memory: "8192"
+      foneh_imp_decision:
+        cpu: "4096"
+        memory: "8192"
+      foneh_imp:
+        cpu: "4096"
+        memory: "8192"
+      foneh_vast_event:
+        cpu: "1024"
+        memory: "8192"
+      bidcore_bid_request_app:
+        cpu: "4096"
+        memory: "8192"

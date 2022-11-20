@@ -1,0 +1,76 @@
+version : 2.1
+
+orbs:
+  aws-cli: circleci/aws-cli@0.1.19
+
+executors:
+  python:
+    docker:
+      - image: 'cimg/python:3.8'
+        auth:
+          username: $DOCKER_HUB_USERNAME
+          password: $DOCKER_HUB_PULL_ACCESS_TOKEN
+
+commands:
+  set-dockerhub-creds:
+    steps:
+      - run:
+          name: setup dockerhub credentials
+          command: echo "${DOCKER_HUB_PULL_ACCESS_TOKEN}" | docker login --username ${DOCKER_HUB_USERNAME} --password-stdin
+  deploy:
+    parameters:
+      env:
+        type: string
+    steps:
+      - run: ./bin/deploy <<parameters.env>>
+
+jobs:
+  deploy-prd:
+    executor: python
+    steps:
+      - checkout
+      - set-dockerhub-creds
+      - aws-cli/setup
+      - deploy:
+          env: 'production'
+  deploy-stg:
+    executor: python
+    steps:
+      - checkout
+      - set-dockerhub-creds
+      - aws-cli/setup
+      - deploy:
+          env: 'staging'
+  deploy-dev:
+    executor: python
+    steps:
+      - checkout
+      - set-dockerhub-creds
+      - aws-cli/setup
+      - deploy:
+          env: 'development'
+
+workflows:
+  version: 2
+  deploy:
+    jobs:
+      - deploy-dev:
+          context:
+            - docker-hub-pull-creds
+          filters:
+            branches:
+              ignore:
+                - production
+                - staging
+      - deploy-stg:
+          context:
+            - docker-hub-pull-creds
+          filters:
+            branches:
+              only: staging
+      - deploy-prd:
+          context:
+            - docker-hub-pull-creds
+          filters:
+            branches:
+              only: production

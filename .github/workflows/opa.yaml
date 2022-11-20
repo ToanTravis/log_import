@@ -1,0 +1,11 @@
+name: Test opa policy
+on: push
+jobs:
+  conftest:
+    name: Test opa policy
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@master
+      name: checkout
+    - name: test open policy agent for circleci
+      run: docker run -v `pwd`:`pwd` -w `pwd` --rm openpolicyagent/opa test -v .circleci/policy/

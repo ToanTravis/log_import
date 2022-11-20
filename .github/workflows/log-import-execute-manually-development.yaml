@@ -1,0 +1,83 @@
+name: 【Development】Execute A1 Log Import Manually
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Log platform
+        required: true
+      type:
+        description: Log type
+        required: true
+      version:
+        description: Version of metadata of log import
+        required: false
+      start_date:
+        description: Input start date [YYYY-MM-DD]. Default is yesterday.
+        required: false
+      end_date:
+        description: Input end date [YYYY-MM-DD]. Default is today.
+        required: false
+      log_files_limit:
+        description: Maximum number of files to be imported in one task. Default is 200
+        required: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  execute:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1-node16
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ROOT_ACCOUNT_ID }}:role/logimport-github-action-role
+          role-session-name: log-import-execute-manually-development
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Set platform parameter
+        env:
+          platform: ${{ github.event.inputs.platform }}
+        run: echo "PAYLOAD=$(echo "\"platform\":\"$platform\"")" >> $GITHUB_ENV
+
+      - name: Set log type parameter
+        env:
+          type: ${{ github.event.inputs.type }}
+        run: echo "PAYLOAD=$(echo $PAYLOAD,\"type\":\"$type\")" >> $GITHUB_ENV
+
+      - name: Set version parameter
+        if: ${{ github.event.inputs.version != '' }}
+        env:
+          version: ${{ github.event.inputs.version }}
+        run: echo "PAYLOAD=$(echo $PAYLOAD,\"version\":\"$version\")" >> $GITHUB_ENV
+
+      - name: Set start_date parameter
+        if: ${{ github.event.inputs.start_date != '' }}
+        env:
+          start_date: ${{ github.event.inputs.start_date }}
+        run: echo "PAYLOAD=$(echo $PAYLOAD,\"start_date\":\"$start_date\")" >> $GITHUB_ENV
+
+      - name: Set end_date parameter
+        if: ${{ github.event.inputs.end_date != '' }}
+        env:
+          end_date: ${{ github.event.inputs.end_date }}
+        run: echo "PAYLOAD=$(echo $PAYLOAD,\"end_date\":\"$end_date\")" >> $GITHUB_ENV
+
+      - name: Set log_files_limit parameter
+        if: ${{ github.event.inputs.log_files_limit != '' }}
+        env:
+          log_files_limit: ${{ github.event.inputs.log_files_limit }}
+        run: echo "PAYLOAD=$(echo $PAYLOAD,\"log_files_limit\":\"$log_files_limit\")" >> $GITHUB_ENV
+
+      - name: Invoke lambda with parameter input
+        env:
+          FUNCTION_NAME: development-log-import-start-stepfunction
+        run: |
+          aws lambda invoke \
+            --function-name "$FUNCTION_NAME" \
+            --cli-binary-format raw-in-base64-out \
+            --payload "{$PAYLOAD}" \
+            response.json

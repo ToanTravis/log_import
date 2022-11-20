@@ -1,0 +1,54 @@
+{
+    "family": "production-a1-log-import",
+    "networkMode": "awsvpc",
+    "taskRoleArn": "arn:aws:iam::574425207058:role/logimport-ecs-task-role",
+    "executionRoleArn": "arn:aws:iam::574425207058:role/logimport-ecs-execution-role",
+    "containerDefinitions": [
+        {
+            "name": "production-a1-log-import-container",
+            "essential": true,
+            "logConfiguration": {
+                "logDriver": "awsfirelens"
+            },
+            "dependsOn": [
+                {
+                    "containerName": "production-a1-firelens-log-router-container",
+                    "condition": "START"
+                }
+            ]
+        },
+        {
+            "name": "production-a1-firelens-log-router-container",
+            "essential": true,
+            "firelensConfiguration": {
+                "type": "fluentbit",
+                "options": {
+                    "config-file-type": "file",
+                    "config-file-value": "/logDestinations.conf"
+                }
+            },
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-group": "/aws/ecs/production-a1-log-import",
+                    "awslogs-region": "ap-northeast-1",
+                    "awslogs-create-group": "true",
+                    "awslogs-stream-prefix": "log-router"
+                }
+            },
+            "environment": [
+                { "name": "NAME", "value": "cloudwatch" },
+                { "name": "REGION", "value": "ap-northeast-1"},
+                { "name": "LOG_GROUP", "value": "aws/ecs/production-a1-log-import"}
+            ]
+        }
+    ],
+    "requiresCompatibilities": [
+        "FARGATE"
+    ],
+    "cpu": "2048",
+    "memory": "16384",
+    "ephemeralStorage": {
+        "sizeInGiB": 150
+    }
+}
