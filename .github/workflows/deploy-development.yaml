@@ -1,0 +1,162 @@
+name: 【Development】Deploy ECR, ECS, SAM template
+
+on:
+  workflow_dispatch:
+
+env:
+  ENVIRONMENT: development
+  DEPLOY_BUCKET: audienceone-development
+  SUBNET_1: subnet-f5a0a181
+  SUBNET_2: subnet-962203d0
+  SECURITY_GROUP: sg-0e2983e5f0ff26b23
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    if: ${{ github.ref != 'refs/heads/production' }}
+    name: Deploy the image to ECR then update ECS task definition, deploy lambda functions.
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1-node16
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ROOT_ACCOUNT_ID }}:role/logimport-github-action-deployment-role-development
+          role-session-name: log-import-deployment-development
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build, tag, and push log import app image to Amazon ECR
+        id: build-log-import-app-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: a1-log-import
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Build a docker container and
+          # push it to ECR so that it can
+          # be deployed to ECS.
+          docker build -t "$ECR_REGISTRY"/"$ECR_REPOSITORY":"$IMAGE_TAG" src/log-import-docker/script
+          docker push "$ECR_REGISTRY"/"$ECR_REPOSITORY":"$IMAGE_TAG"
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >>$GITHUB_OUTPUT
+
+      - name: Build, tag, and push custom firelens fluentbit log routing to ECR
+        id: build-log-import-custom-log-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: a1-log-import
+          IMAGE_TAG: ${{ github.sha }}
+          ENV: ${{ env.ENVIRONMENT }}
+        run: |
+          # Build a docker container and
+          # push it to ECR so that it can
+          # be deployed to ECS.
+          docker build --build-arg ENV_CONFIG="$ENV".conf -t "$ECR_REGISTRY"/"$ECR_REPOSITORY":custom-fluentbit-"$IMAGE_TAG" src/log-import-docker/custom-firelens-fluentbit
+          docker push "$ECR_REGISTRY"/"$ECR_REPOSITORY":custom-fluentbit-"$IMAGE_TAG"
+          echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:custom-fluentbit-$IMAGE_TAG"
+
+      - name: Fill custom firelens fluentbit image ID in the Amazon ECS task definition
+        id: render-custom-log-task-def
+        env:
+          CONTAINER_NAME: ${{ env.ENVIRONMENT }}-a1-firelens-log-router-container
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: src/task-definition/a1-log-import/${{ env.ENVIRONMENT }}.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.build-log-import-custom-log-image.outputs.image }}
+
+      - name: Fill in the new log import app image ID in the Amazon ECS task definition
+        id: render-app-task-def
+        env:
+          CONTAINER_NAME: ${{ env.ENVIRONMENT }}-a1-log-import-container
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: ${{ steps.render-custom-log-task-def.outputs.task-definition }}
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.build-log-import-app-image.outputs.image }}
+
+      - name: Deploy Amazon ECS task definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.render-app-task-def.outputs.task-definition }}
+          wait-for-service-stability: true
+
+      - name: Build, tag, and push MediaMath log import image to Amazon ECR
+        id: mediamath-build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: mediamath-log-import
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Build a docker container and
+          # push it to ECR so that it can
+          # be deployed to ECS.
+          docker build -t "$ECR_REGISTRY"/"$ECR_REPOSITORY":"$IMAGE_TAG" src/log-import-docker/mediamath
+          docker push "$ECR_REGISTRY"/"$ECR_REPOSITORY":"$IMAGE_TAG"
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >>$GITHUB_OUTPUT
+
+      - name: Fill in the new MediaMath image ID in the Amazon ECS task definition
+        id: mediamath-create-task-def
+        env:
+          CONTAINER_NAME: ${{ env.ENVIRONMENT }}-mediamath-log-import-container
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: src/task-definition/mediamath-log-import/${{ env.ENVIRONMENT }}.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.mediamath-build-image.outputs.image }}
+
+      - name: Deploy Amazon ECS MediaMath task definition
+        id: mediamath-task-def
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.mediamath-create-task-def.outputs.task-definition }}
+          wait-for-service-stability: true
+
+      - name: SAM Model Build
+        run: |
+          sam build
+
+      - name: SAM Deploy for development
+        env:
+          STACK_NAME: ${{ env.ENVIRONMENT }}-a1-log-import-cloudformation-stack
+          ECS_CLUSTER: log-import-${{ env.ENVIRONMENT }}
+          APP_CONTAINER_NAME: ${{ env.ENVIRONMENT }}-a1-log-import-container
+          LOG_ROUTER_CONTAINER_NAME: ${{ env.ENVIRONMENT }}-a1-firelens-log-router-container
+          MEDIAMATH_LOG_IMPORT_CONTAINER_NAME: ${{ env.ENVIRONMENT }}-mediamath-log-import-container
+          LAMBDA_EXECUTION_ROLE_ARN: arn:aws:iam::${{ secrets.AWS_ROOT_ACCOUNT_ID }}:role/logimport-lambda-execution-role-development
+          STATE_MACHINE_ROLE_ARN: arn:aws:iam::${{ secrets.AWS_ROOT_ACCOUNT_ID }}:role/logimport-step-function-role-development
+          STATE_MACHINE_LOG_GROUP: arn:aws:logs:${{ secrets.AWS_REGION }}:${{ secrets.AWS_ROOT_ACCOUNT_ID }}:log-group:/aws/step-functions/${{ env.ENVIRONMENT }}-a1-log-import:*
+          TAGS: COMMIT_SHA=${{ github.sha }}
+        run: |
+          # Run SAM Deploy
+          sam deploy --template-file .aws-sam/build/template.yaml \
+            --stack-name "$STACK_NAME" \
+            --s3-bucket "$DEPLOY_BUCKET" \
+            --s3-prefix "log-import-deployment" \
+            --parameter-overrides \
+              'ParameterKey=Environment,ParameterValue=${{ env.ENVIRONMENT }}' \
+              'ParameterKey=DeployType,ParameterValue=All' \
+              'ParameterKey=EcsCluster,ParameterValue=${{ env.ECS_CLUSTER }}' \
+              'ParameterKey=FirstSubnet,ParameterValue=${{ env.SUBNET_1 }}' \
+              'ParameterKey=SecondSubnet,ParameterValue=${{ env.SUBNET_2 }}' \
+              'ParameterKey=SecurityGroup,ParameterValue=${{ env.SECURITY_GROUP }}' \
+              'ParameterKey=LogImportTaskDefinition,ParameterValue=${{ steps.task-def.outputs.task-definition-arn }}' \
+              'ParameterKey=LogImportAppContainerName,ParameterValue=${{ env.APP_CONTAINER_NAME }}' \
+              'ParameterKey=LogRouterContainerName,ParameterValue=${{ env.LOG_ROUTER_CONTAINER_NAME }}' \
+              'ParameterKey=MediaMathLogImportTaskDefinition,ParameterValue=${{ steps.mediamath-task-def.outputs.task-definition-arn }}' \
+              'ParameterKey=MediaMathLogImportContainerName,ParameterValue=${{ env.MEDIAMATH_LOG_IMPORT_CONTAINER_NAME }}' \
+              'ParameterKey=LambdaExecutionRoleArn,ParameterValue=${{ env.LAMBDA_EXECUTION_ROLE_ARN }}' \
+              'ParameterKey=StateMachineRoleArn,ParameterValue=${{ env.STATE_MACHINE_ROLE_ARN }}' \
+              'ParameterKey=StateMachineLogGroup,ParameterValue=${{ env.STATE_MACHINE_LOG_GROUP }}' \
+            --tags 'COMMIT_SHA=${{ github.sha }} BRANCH_NAME=${{ github.ref_name }}' \
+            --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM

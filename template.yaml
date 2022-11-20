@@ -1,0 +1,250 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Stack template for deploy Log Import
+
+Parameters:
+  Environment:
+    Type: String
+    Description: Environment for building stack
+    AllowedValues:
+      - development
+      - production
+  DeployType:
+    Type: String
+    Description: Deploy type (Normal log import, MediaMath log import or both)
+    AllowedValues:
+      - Normal
+      - MediaMath
+      - All
+  EcsCluster:
+    Type: String
+    Description: ECS Cluster name
+  FirstSubnet:
+    Type: String
+    Description: The first subnet for running ecs task
+  SecondSubnet:
+    Type: String
+    Description: The second subnet for running ecs task
+  SecurityGroup:
+    Type: String
+    Description: The security groups for running ecs task
+  LogImportTaskDefinition:
+    Type: String
+    Description: Task definition of executing A1 log import
+  LogImportAppContainerName:
+    Type: String
+    Description: Container name of executing A1 log import ecs task
+  LogRouterContainerName:
+    Type: String
+    Description: Container name of log router for A1 log import ecs task
+  MediaMathLogImportTaskDefinition:
+    Type: String
+    Description: Task definition of executing MediaMath log import
+  MediaMathLogImportContainerName:
+    Type: String
+    Description: Container name of executing MediaMath log import ecs task
+  LambdaExecutionRoleArn:
+    Type: String
+    Description: Execution role for lambda function
+  StateMachineRoleArn:
+    Type: String
+    Description: Execution role for step functions
+  StateMachineLogGroup:
+    Type: String
+    Description: Log group for step functions
+
+Conditions:
+  IsDeployNormal: !Or
+    - !Equals [!Ref DeployType, Normal]
+    - !Equals [!Ref DeployType, All]
+  IsDeployMediaMath: !Or
+    - !Equals [!Ref DeployType, MediaMath]
+    - !Equals [!Ref DeployType, All]
+  EnableCron:
+    !Equals [!Ref Environment, production]
+
+Resources:
+  NotifySlackLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${Environment}-log-import-notify-slack
+      CodeUri: src/lambda-slack-notify
+      Role: !Ref LambdaExecutionRoleArn
+      Handler: app.lambda_handler
+      Runtime: python3.8
+      Timeout: 900
+  NotifySlackLambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !Ref NotifySlackLambda
+      Principal: sns.amazonaws.com
+  NotifySlackSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub ${Environment}-log-import-error-notification
+      Subscription:
+        - Protocol: lambda
+          Endpoint: !GetAtt NotifySlackLambda.Arn
+  GetStepFunctionLogStreamLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${Environment}-log-import-get-stepfunction-log-stream
+      CodeUri: src/lambda-get-stepfunction-log-stream
+      Role: !Ref LambdaExecutionRoleArn
+      Handler: app.lambda_handler
+      Runtime: python3.8
+      Timeout: 900
+      Environment:
+        Variables:
+          ENV: !Ref Environment
+  LogImportStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: !Sub ${Environment}-a1-log-import
+      DefinitionUri: src/step-functions/a1-log-import/statemachine.json
+      DefinitionSubstitutions:
+        EcsCluster: !Ref EcsCluster
+        FirstSubnet: !Ref FirstSubnet
+        SecondSubnet: !Ref SecondSubnet
+        SecurityGroup: !Ref SecurityGroup
+        LogImportTaskDefinition: !Ref LogImportTaskDefinition
+        LogImportAppContainerName: !Ref LogImportAppContainerName
+        LogRouterContainerName: !Ref LogRouterContainerName
+        SNSTopicArn: !Ref NotifySlackSNSTopic
+        StepFunctionGetLogStreamLambda: !GetAtt GetStepFunctionLogStreamLambda.Arn
+      Logging:
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !Ref StateMachineLogGroup
+        IncludeExecutionData: True
+        Level: ALL
+      Role: !Ref StateMachineRoleArn
+  StartLogImportLambda:
+    Type: AWS::Serverless::Function
+    Condition: IsDeployNormal
+    Properties:
+      FunctionName: !Sub ${Environment}-log-import-start-stepfunction
+      CodeUri: src/lambda-start-log-import-stepfunction
+      Role: !Ref LambdaExecutionRoleArn
+      Handler: app.lambda_handler
+      Runtime: python3.8
+      Timeout: 900
+      Environment:
+        Variables:
+          ENV: !Ref Environment
+          STATE_MACHINE_ARN: !Ref LogImportStateMachine
+          SNS_TOPIC_ARN: !Ref NotifySlackSNSTopic
+      Events:
+        YoneAppIncomingRequest:
+          Type: Schedule
+          Properties:
+            Schedule: "cron(5,35 * * * ? *)"
+            Name: !Sub ${Environment}-a1-log-import-yone-app-incoming-request
+            Description: "Run Yone app_incoming_request log import at 5 and 35 minutes every hour UTC"
+            Input: '{"platform":"yone","type":"app_incoming_request"}'
+        YoneAppOutgoingRequest:
+          Type: Schedule
+          Properties:
+            Schedule: "cron(0,30 * * * ? *)"
+            Name: !Sub ${Environment}-a1-log-import-yone-app-outgoing-request
+            Description: "Run Yone app_outgoing_request log import at 0 and 30 minutes every hour UTC"
+            Input: '{"platform":"yone","type":"app_outgoing_request"}'
+        YoneDspImp:
+          Type: Schedule
+          Properties:
+            Schedule: "cron(1,31 * * * ? *)"
+            Name: !Sub ${Environment}-a1-log-import-yone-dsp-imp
+            Description: "Run Yone dsp_imp log import at 1 and 31 minutes every hour UTC"
+            Input: '{"platform":"yone","type":"dsp_imp"}'
+        YoneNetworkImp:
+          Type: Schedule
+          Properties:
+            Schedule: "cron(0,30 * * * ? *)"
+            Name: !Sub ${Environment}-a1-log-import-yone-network-imp
+            Description: "Run Yone network_imp log import at 0 and 30 minutes every hour UTC"
+            Input: '{"platform":"yone","type":"network_imp"}'
+        FonehAdSlotView:
+          Type: Schedule
+          Properties:
+            Schedule: "cron(3,33 * * * ? *)"
+            Name: !Sub ${Environment}-log-import-foneh-ad-slot-view
+            Description: "Run FoneH ad_slot_view log import at 3 and 33 minutes every hour UTC"
+            Input: '{"platform":"foneh","type":"ad_slot_view"}'
+        FonehClick:
+          Type: Schedule
+          Properties:
+            Schedule: "cron(5,35 * * * ? *)"
+            Name: !Sub ${Environment}-a1-log-import-foneh-click
+            Description: "Run FoneH click log import at 5 and 35 minutes every hour UTC"
+            Input: '{"platform":"foneh","type":"click"}'
+        FonehImp:
+          Type: Schedule
+          Properties:
+            Schedule: "cron(2,32 * * * ? *)"
+            Name: !Sub ${Environment}-a1-log-import-foneh-imp
+            Description: "Run FoneH imp log import at 2 and 32 minutes every hour UTC"
+            Input: '{"platform":"foneh","type":"imp"}'
+        FonehImpDecision:
+          Type: Schedule
+          Properties:
+            Schedule: "cron(3,33 * * * ? *)"
+            Name: !Sub ${Environment}-a1-log-import-foneh-imp-decision
+            Description: "Run FoneH imp_devision log import at 3 and 33 minutes every hour UTC"
+            Input: '{"platform":"foneh","type":"imp_decision"}'
+        FonehVastEvent:
+          Type: Schedule
+          Properties:
+            Schedule: "cron(4,34 * * * ? *)"
+            Name: !Sub ${Environment}-a1-log-import-foneh-vast-event
+            Description: "Run FoneH vast_event log import at 4 and 34 minutes every hour UTC"
+            Input: '{"platform":"foneh","type":"vast_event"}'
+        BidcoreBidRequestApp:
+          Type: Schedule
+          Properties:
+            Schedule: "cron(5 * * * ? *)"
+            Name: !Sub ${Environment}-a1-log-import-bidcore-bid-request-app
+            Description: "Run Bidcore bid_request_app log import at 5 minutes every hour UTC"
+            Input: '{"platform":"bidcore","type":"bid_request_app"}'
+  StartMediaMathFargateLambda:
+    Type: AWS::Serverless::Function
+    Condition: IsDeployMediaMath
+    Properties:
+      FunctionName: !Sub ${Environment}-mediamath-log-import-start-fargate
+      CodeUri: src/lambda-start-mediamath-log-import-fargate
+      Role: !Ref LambdaExecutionRoleArn
+      Handler: app.lambda_handler
+      Runtime: python3.8
+      Timeout: 900
+      Environment:
+        Variables:
+          ENV: !Ref Environment
+          SNS_TOPIC_ARN: !Ref NotifySlackSNSTopic
+          TASK_DEF_ARN: !Ref MediaMathLogImportTaskDefinition
+          ECS_CLUSTER: !Ref EcsCluster
+          CONTAINER_NAME: !Ref MediaMathLogImportContainerName
+          FIRST_SUBNET: !Ref FirstSubnet
+          SECOND_SUBNET: !Ref SecondSubnet
+          SECURITY_GROUP: !Ref SecurityGroup
+      Events:
+        Impressions:
+          Type: Schedule
+          Properties:
+            Schedule: "cron(0 7,15,23 * * ? *)"
+            Name: !Sub ${Environment}-mediamath-log-import-impressions
+            Description: "Run MediaMath impressions log import on 7:00 UTC, 15:00 UTC, 23:00 UTC"
+            Input: '{"log_type":"impressions"}'
+        Events:
+          Type: Schedule
+          Properties:
+            Schedule: "cron(0 8,16,0 * * ? *)"
+            Name: !Sub ${Environment}-mediamath-log-import-events
+            Description: "Run MediaMath events log import on 8:00 UTC, 16:00 UTC, 0:00 UTC"
+            Input: '{"log_type":"events"}'
+        AttributedEvents:
+          Type: Schedule
+          Properties:
+            Schedule: "cron(0 9,17,1 * * ? *)"
+            Name: !Sub ${Environment}-mediamath-log-import-attributed-events
+            Description: "Run MediaMath attributed-events log import on 9:00 UTC, 17:00 UTC, 1:00 UTC"
+            Input: '{"log_type":"attributed_events"}'

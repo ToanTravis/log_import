@@ -1,0 +1,152 @@
+{
+    "StartAt": "Get StepFunction Log Stream",
+    "States": {
+        "Get StepFunction Log Stream": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Parameters": {
+                "FunctionName": "${StepFunctionGetLogStreamLambda}",
+                "Payload": {
+                    "stepfunction_name.$": "$.stepfunction_name"
+                }
+            },
+            "ResultPath": "$.stepfunction_log_stream",
+            "Next": "Execute Log Import"
+        },
+        "Execute Log Import": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::ecs:runTask.sync",
+            "Parameters": {
+                "LaunchType": "FARGATE",
+                "Cluster": "${EcsCluster}",
+                "TaskDefinition": "${LogImportTaskDefinition}",
+                "NetworkConfiguration": {
+                    "AwsvpcConfiguration": {
+                        "Subnets": [
+                            "${FirstSubnet}",
+                            "${SecondSubnet}"
+                        ],
+                        "SecurityGroups": [ "${SecurityGroup}" ],
+                        "AssignPublicIp": "ENABLED"
+                    }
+                },
+                "Overrides": {
+                    "ContainerOverrides": [
+                        {
+                            "Name": "${LogImportAppContainerName}",
+                            "Environment": [
+                                {
+                                    "Name": "LOG_PLATFORM",
+                                    "Value.$": "$.log_platform"
+                                },
+                                {
+                                    "Name": "LOG_TYPE",
+                                    "Value.$": "$.log_type"
+                                },
+                                {
+                                    "Name": "RUN_ENV",
+                                    "Value.$": "$.run_env"
+                                },
+                                {
+                                    "Name": "VERSION",
+                                    "Value.$": "$.version"
+                                },
+                                {
+                                    "Name": "SNS_TOPIC_ARN",
+                                    "Value": "${SNSTopicArn}"
+                                },
+                                {
+                                    "Name": "ECS_TASK_NAME",
+                                    "Value.$": "$.ecs_task_name"
+                                },
+                                {
+                                    "Name": "TD_TIMEOUT",
+                                    "Value.$": "$.td_timeout"
+                                },
+                                {
+                                    "Name": "LOG_FILES_LIMIT",
+                                    "Value.$": "$.log_files_limit"
+                                },
+                                {
+                                    "Name": "STEPFUNCTION_NAME",
+                                    "Value.$": "$.stepfunction_name"
+                                },
+                                {
+                                    "Name": "LOG_STREAM",
+                                    "Value.$": "$.log_stream"
+                                }
+                            ],
+                            "Command.$": "States.Array('--start-date', $.start_date, '--end-date', $.end_date)",
+                            "Memory.$": "$.app_memory_size"
+                        },
+                        {
+                            "Name": "${LogRouterContainerName}",
+                            "Environment": [
+                                {
+                                    "Name": "LOG_STREAM",
+                                    "Value.$": "$.log_stream"
+                                },
+                                {
+                                    "Name": "STEPFUNCTION_LOG_STREAM",
+                                    "Value.$": "$.stepfunction_log_stream.Payload"
+                                }
+                            ],
+                            "Memory.$": "$.router_memory_size"
+                        }
+                    ],
+                    "Cpu.$": "$.task_cpu_size",
+                    "Memory.$": "$.task_memory_size"
+                }
+            },
+            "ResultPath": null,
+            "End": true,
+            "Retry": [
+                {
+                    "ErrorEquals": [ "States.TaskFailed" ],
+                    "MaxAttempts": 3,
+                    "IntervalSeconds": 30,
+                    "BackoffRate": 1
+                }
+            ],
+            "Catch": [
+                {
+                    "ErrorEquals": [ "States.TaskFailed" ],
+                    "Next": "Task Failed Parser",
+                    "ResultPath": "$.error"
+                },
+                {
+                    "ErrorEquals": [ "States.ALL" ],
+                    "Next": "Error Handler",
+                    "ResultPath": "$.error"
+                }
+            ]
+        },
+        "Task Failed Parser": {
+            "Type": "Pass",
+            "Result": {
+                "Error": "States.TaskFailed",
+                "Cause": "ECS Task has been failed to execute."
+            },
+            "ResultPath": "$.error",
+            "Next": "Error Handler"
+        },
+        "Error Handler": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::sns:publish",
+            "Parameters": {
+                "Subject": "Execute log import error",
+                "Message": {
+                    "message_type": "error",
+                    "task_name.$": "$.ecs_task_name",
+                    "timestamp.$": "$$.State.EnteredTime",
+                    "run_env.$": "$.run_env",
+                    "log_platform.$": "$.log_platform",
+                    "log_type.$": "$.log_type",
+                    "log_message.$": "States.Format('{} [stepfunction_name={}]', $.error.Cause, $.stepfunction_name)"
+                },
+                "TopicArn": "${SNSTopicArn}"
+            },
+            "End": true
+        }
+    }
+}

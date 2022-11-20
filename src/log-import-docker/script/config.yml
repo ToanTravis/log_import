@@ -1,0 +1,86 @@
+production:
+  bucket_name: audienceone
+  aws_access_key_id: PRODUCTIN-TD-IMPORT-ACCESSKEY-ID
+  aws_secret_access_key: PRODUCTION-TD-IMPORT-SECRET-ACCESSKEY
+  td_apikey: PRODUCTION-TD-API-KEY
+  log_group_name: /aws/ecs/production-a1-log-import
+  log_region: ap-northeast-1
+  cluster_name: "log-import-{}"
+  container_name: "{}-a1-log-import-container"
+  yone:
+    app_incoming_request:
+      num_parallel: 1
+      file_name_format: "f'__{words[2]}.{words[3]}.{words[4]}_{words[5]}_{words[6]}_{words[7]}_{words[8]}.{words[9]}.{words[10]}_{words[11]}.{words[12]}.{words[13]}'"
+    app_outgoing_request:
+      num_parallel: 1
+      file_name_format: "f'__{words[2]}.{words[3]}.{words[4]}_{words[5]}_{words[6]}_{words[7]}.{words[8]}.{words[9]}_{words[10]}.{words[11]}.{words[12]}'"
+    dsp_imp:
+      num_parallel: 4
+      file_name_format: "f'__{words[2]}.{words[3]}.{words[4]}_{words[5]}_{words[6]}.{words[7]}.{words[8]}_{words[9]}.{words[10]}.{words[11]}'"
+    network_imp:
+      num_parallel: 1
+      file_name_format: "f'__{words[2]}.{words[3]}.{words[4]}_{words[5]}_{words[6]}.{words[7]}.{words[8]}_{words[9]}.{words[10]}.{words[11]}'"
+  foneh:
+    ad_slot_view:
+      num_parallel: 2
+      file_name_format: "f'__{words[2]}.{words[3]}.{words[4]}_{words[5]}_{words[6]}_{words[7]}.{words[8]}.{words[9]}_{words[10]}.{words[11]}.{words[12]}'"
+    click:
+      num_parallel: 1
+      file_name_format: "f'__{words[2]}.{words[3]}.{words[4]}_{words[5]}.{words[6]}.{words[7]}_{words[8]}.{words[9]}.{words[10]}'"
+    imp_decision:
+      num_parallel: 4
+      file_name_format: "f'__{words[2]}.{words[3]}.{words[4]}_{words[5]}.{words[6]}.{words[7]}_{words[8]}.{words[9]}.{words[10]}'"
+    imp:
+      num_parallel: 4
+      file_name_format: "f'__{words[2]}.{words[3]}.{words[4]}_{words[5]}_{words[6]}.{words[7]}.{words[8]}_{words[9]}.{words[10]}.{words[11]}'"
+    vast_event:
+      num_parallel: 1
+      file_name_format: "f'__{words[2]}.{words[3]}.{words[4]}_{words[5]}_{words[6]}.{words[7]}.{words[8]}_{words[9]}.{words[10]}.{words[11]}'"
+  bidcore:
+    bid_request_app:
+      num_parallel: 2
+      file_name_format: "f'__{words[2]}.{words[3]}.{words[4]}_{words[5]}_{words[6]}.{words[7]}.{words[8]}_{words[9]}.{words[10]}.{words[11]}'"
+
+development:
+  bucket_name: audienceone-development
+  aws_access_key_id: DEVELOPMENT-TD-IMPORT-ACCESSKEY-ID
+  aws_secret_access_key: DEVELOPMENT-TD-IMPORT-SECRET-ACCESSKEY
+  td_apikey: DEVELOPMENT-TD-API-KEY
+  log_group_name: /aws/ecs/development-a1-log-import
+  log_region: ap-northeast-1
+  cluster_name: "log-import-{}"
+  container_name: "{}-a1-log-import-container"
+  aone_odessa_dev:
+    import_test:
+      num_parallel: 1
+      file_name_format: "f'__{words[2]}.{words[3]}.{words[4]}_{words[5]}.{words[6]}_{words[7]}.{words[8]}.{words[9]}'"
+    yone_app_incoming_request:
+      num_parallel: 1
+      file_name_format: "f'__{words[2]}.{words[3]}.{words[4]}_{words[5]}_{words[6]}_{words[7]}_{words[8]}.{words[9]}.{words[10]}_{words[11]}.{words[12]}.{words[13]}'"
+    yone_app_outgoing_request:
+      num_parallel: 1
+      file_name_format: "f'__{words[2]}.{words[3]}.{words[4]}_{words[5]}_{words[6]}_{words[7]}.{words[8]}.{words[9]}_{words[10]}.{words[11]}.{words[12]}'"
+    yone_dsp_imp:
+      num_parallel: 4
+      file_name_format: "f'__{words[2]}.{words[3]}.{words[4]}_{words[5]}_{words[6]}.{words[7]}.{words[8]}_{words[9]}.{words[10]}.{words[11]}'"
+    yone_network_imp:
+      num_parallel: 1
+      file_name_format: "f'__{words[2]}.{words[3]}.{words[4]}_{words[5]}_{words[6]}.{words[7]}.{words[8]}_{words[9]}.{words[10]}.{words[11]}'"
+    foneh_ad_slot_view:
+      num_parallel: 2
+      file_name_format: "f'__{words[2]}.{words[3]}.{words[4]}_{words[5]}_{words[6]}_{words[7]}.{words[8]}.{words[9]}_{words[10]}.{words[11]}.{words[12]}'"
+    foneh_click:
+      num_parallel: 1
+      file_name_format: "f'__{words[2]}.{words[3]}.{words[4]}_{words[5]}.{words[6]}.{words[7]}_{words[8]}.{words[9]}.{words[10]}'"
+    foneh_imp_decision:
+      num_parallel: 4
+      file_name_format: "f'__{words[2]}.{words[3]}.{words[4]}_{words[5]}.{words[6]}.{words[7]}_{words[8]}.{words[9]}.{words[10]}'"
+    foneh_imp:
+      num_parallel: 4
+      file_name_format: "f'__{words[2]}.{words[3]}.{words[4]}_{words[5]}_{words[6]}.{words[7]}.{words[8]}_{words[9]}.{words[10]}.{words[11]}'"
+    foneh_vast_event:
+      num_parallel: 1
+      file_name_format: "f'__{words[2]}.{words[3]}.{words[4]}_{words[5]}_{words[6]}.{words[7]}.{words[8]}_{words[9]}.{words[10]}.{words[11]}'"
+    bidcore_bid_request_app:
+      num_parallel: 2
+      file_name_format: "f'__{words[2]}.{words[3]}.{words[4]}_{words[5]}_{words[6]}.{words[7]}.{words[8]}_{words[9]}.{words[10]}.{words[11]}'"

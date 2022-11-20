@@ -1,0 +1,14 @@
+name: Validate CircleCI config
+on: push
+jobs:
+  conftest:
+    name: Validate CircleCI config
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@master
+      name: checkout
+    - name: validate
+      uses: instrumenta/conftest-action@master
+      with:
+        files: .circleci/config.yml
+        policy: .circleci/policy/circleci.rego
